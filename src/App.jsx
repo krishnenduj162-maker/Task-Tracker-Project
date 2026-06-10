@@ -6,29 +6,102 @@ import {
   updateTaskApi,
   getAiPriority,
 } from "./api/taskApi";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 function App() {
+  const [darkMode, setDarkMode] = useState(false);
   const [tasks, setTasks] = useState([]);
 
+   const pageStyle = {
+  ...styles.page,
+  background: darkMode
+    ? "#121212"
+    : "linear-gradient(135deg,#667eea,#764ba2)",
+  transition: "all 0.4s ease",
+};
+  const [user, setUser] = useState(null);
+  
   const [newTask, setNewTask] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newPriority, setNewPriority] = useState("low");
+  const [dueDate, setDueDate] = useState("");
 
+  const getDaysLeft = () => {
+  if (!dueDate) return "";
+
+  const today = new Date();
+  const due = new Date(dueDate);
+
+  const diffTime = due - today;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays > 1) return `${diffDays} days left`;
+  if (diffDays === 1) return "1 day left";
+  if (diffDays === 0) return "Due today";
+
+  return `Overdue by ${Math.abs(diffDays)} day(s)`;
+};
+  const [showDueInfo, setShowDueInfo] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [editPriority, setEditPriority] = useState("low");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
 
+  const totalTasks = tasks.length;
+
+const completedTasks = tasks.filter(
+  (task) => task.status === "completed"
+).length;
+
+const inProgressTasks = tasks.filter(
+  (task) => task.status === "inprogress"
+).length;
+
+const todoTasks = tasks.filter(
+  (task) => task.status === "todo"
+).length;
+
+const chartData = [
+  { name: "Completed", value: completedTasks },
+  { name: "In Progress", value: inProgressTasks },
+  { name: "Todo", value: todoTasks },
+];
+
+const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
+
   const [aiMessage, setAiMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const aiTimerRef = useRef(null);
 
+  // cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (aiTimerRef.current) {
+        clearTimeout(aiTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     loadTasks();
   }, []);
+  useEffect(() => {
+  if ("Notification" in window) {
+    Notification.requestPermission();
+  }
+}, []);
 
   const loadTasks = async () => {
     try {
@@ -45,7 +118,13 @@ function App() {
 
   const getPriorityColor = (p) =>
     p === "high" ? "#e74c3c" : p === "medium" ? "#f39c12" : "#2ecc71";
-
+  const showNotification = (task) => {
+  if (Notification.permission === "granted") {
+    new Notification("⏰ Task Reminder", {
+      body: `Task "${task.title}" is due or overdue!`,
+    });
+  }
+};
   const getStatusColor = (s) => {
     switch (s) {
       case "completed":
@@ -56,8 +135,26 @@ function App() {
         return "#3498db";
     }
   };
+  useEffect(() => {
+  const interval = setInterval(() => {
+    const now = new Date();
 
-  // ===================== AI =====================
+    tasks.forEach((task) => {
+      if (task.due_date && task.status !== "completed") {
+        const due = new Date(task.due_date);
+
+        // trigger notification if overdue or due time reached
+        if (due <= now) {
+          showNotification(task);
+        }
+      }
+    });
+  }, 60000); // runs every 1 minute
+
+  return () => clearInterval(interval);
+}, [tasks]);
+
+  // ===================== AI SUGGESTION =====================
   const suggestPriority = async () => {
     if (!newTask.trim()) {
       alert("Please enter a task first.");
@@ -76,7 +173,9 @@ function App() {
 
       setAiMessage(response.data.result);
 
-      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+      if (aiTimerRef.current) {
+        clearTimeout(aiTimerRef.current);
+      }
 
       aiTimerRef.current = setTimeout(() => {
         setAiMessage("");
@@ -89,76 +188,65 @@ function App() {
     }
   };
 
-  // ===================== CLOSE AI =====================
+  // ===================== CLOSE AI MESSAGE =====================
   const closeAiMessage = () => {
-    setAiMessage("");
+  setAiMessage("");
 
-    if (aiTimerRef.current) {
-      clearTimeout(aiTimerRef.current);
-    }
+  // stop auto timer
+  if (aiTimerRef.current) {
+    clearTimeout(aiTimerRef.current);
+  }
 
-    setNewTask("");
-  };
+  // ❌ clear Enter Task input
+  setNewTask("");
+};
 
-  // ===================== ADD TASK (FIXED) =====================
+  // ===================== TASK ACTIONS =====================
   const addTask = async () => {
     if (!newTask.trim()) return;
 
-    try {
-      const response = await createTask({
-        title: newTask,
-        status: "todo",
-        priority: newPriority,
-        description: "",
-      });
-
-      const createdTask = response.data;
-
-      // ✅ instant UI update
-      setTasks((prev) => [...prev, createdTask]);
-
-      setNewTask("");
-      setNewPriority("low");
-    } catch (error) {
-      console.log("Error adding task:", error);
-    }
-  };
-
-  // ===================== DELETE TASK (FIXED) =====================
-  const deleteTask = async (id) => {
-    try {
-      await deleteTaskApi(id);
-
-      // ✅ instant UI update
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (error) {
-      console.log("Error deleting task:", error);
-    }
-  };
-
-  const startEdit = (task) => {
-    setEditingId(task.id);
-    setEditText(task.title);
-    setEditPriority(task.priority);
-  };
-
-  const updateTask = async (id) => {
-    const task = tasks.find((t) => t.id === id);
-
-    await updateTaskApi(id, {
-      title: editText,
-      status: task.status,
-      priority: editPriority,
-      description: task.description || "",
+    await createTask({
+      title: newTask,
+      status: "todo",
+      priority: newPriority,
+      description: newDescription,
     });
 
-    setEditingId(null);
-    setEditText("");
-    setEditPriority("low");
-
+    setNewTask("");
+    setNewPriority("low");
+    setNewDescription("");
     loadTasks();
   };
 
+  const deleteTask = async (id) => {
+    await deleteTaskApi(id);
+    loadTasks();
+  };
+
+  const startEdit = (task) => {
+  setEditingId(task.id);
+  setEditText(task.title);
+  setEditDescription(task.description || "");
+  setEditPriority(task.priority);
+};
+
+  const updateTask = async (id) => {
+  const task = tasks.find((t) => t.id === id);
+
+  await updateTaskApi(id, {
+    title: editText,
+    status: task.status,
+    priority: editPriority,
+    description: editDescription,
+  });
+
+  setEditingId(null);
+  setEditText("");
+  setEditDescription("");
+  setEditPriority("low");
+
+  loadTasks();
+};
   const changeStatus = async (task, status) => {
     await updateTaskApi(task.id, {
       title: task.title,
@@ -170,6 +258,7 @@ function App() {
     loadTasks();
   };
 
+  // ===================== FILTERING =====================
   const filteredTasks = tasks
     .filter((t) =>
       t.title?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -182,41 +271,108 @@ function App() {
     );
 
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <h1 style={styles.heading}>📋 TASK TRACKER</h1>
+    <div style={pageStyle}>
+      <div
+  style={{
+    ...styles.container,
+    background: darkMode
+      ? "rgba(255,255,255,0.08)"
+      : "rgba(255,255,255,0.15)",
+  }}
+>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+  <h1 style={styles.heading}>📋 TASK TRACKER</h1>
 
-        <div>
-          <input
-            style={styles.input}
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Enter task..."
-          />
+  <button
+    onClick={() => setDarkMode(!darkMode)}
+    style={{ padding: "8px 12px", borderRadius: "8px", border: "none", cursor: "pointer" }}
+  >
+    {darkMode ? "🌞 Light Mode" : "🌙 Dark Mode"}
+  </button>
+</div>
 
-          <select
-            style={styles.input}
-            value={newPriority}
-            onChange={(e) => setNewPriority(e.target.value)}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+       {/* ADD TASK */}
+<div>
+  <input
+    style={styles.input}
+    value={newTask}
+    onChange={(e) => setNewTask(e.target.value)}
+    placeholder="Enter task..."
+  />
 
-          <button
-            style={{ ...styles.addBtn, marginRight: "10px", opacity: loading ? 0.6 : 1 }}
-            onClick={suggestPriority}
-            disabled={loading}
-          >
-            {loading ? "🤖 Thinking..." : "✨ AI Suggest"}
-          </button>
+  <select
+    style={styles.input}
+    value={newPriority}
+    onChange={(e) => setNewPriority(e.target.value)}
+  >
+    <option value="low">Low</option>
+    <option value="medium">Medium</option>
+    <option value="high">High</option>
+  </select>
 
-          <button style={styles.addBtn} onClick={addTask}>
-            + Add Task
-          </button>
-        </div>
+  <div style={{ display: "inline-block", marginRight: "10px" }}>
+    <input
+      type="date"
+      style={styles.input}
+      value={dueDate}
+      onChange={(e) => {
+        setDueDate(e.target.value);
+        setShowDueInfo(true);
+      }}
+      onClick={() => setShowDueInfo(false)}
+    />
 
+    {dueDate && showDueInfo && (
+      <div
+        style={{
+          fontSize: "11px",
+          marginTop: "4px",
+          textAlign: "center",
+        }}
+      >
+        {getDaysLeft()}
+      </div>
+    )}
+  </div>
+
+  <button
+    style={{
+      ...styles.addBtn,
+      marginRight: "10px",
+      opacity: loading ? 0.6 : 1,
+    }}
+    onClick={suggestPriority}
+    disabled={loading}
+  >
+    {loading ? "🤖 Thinking..." : "✨ AI Suggest"}
+  </button>
+
+  <button
+    style={styles.addBtn}
+    onClick={addTask}
+  >
+    + Add Task
+  </button>
+
+
+  {/* Description Box */}
+  <textarea
+    style={{
+      width: "100%",
+      padding: "10px",
+      marginTop: "10px",
+      borderRadius: "8px",
+      border: "none",
+      resize: "vertical",
+      minHeight: "70px",
+      boxSizing: "border-box",
+    }}
+    value={newDescription}
+    onChange={(e) => setNewDescription(e.target.value)}
+    placeholder="Enter task description..."
+  />
+</div>
+        {/* AI MESSAGE BOX */}
         {aiMessage && (
           <div style={styles.aiBox}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -235,13 +391,15 @@ function App() {
           </div>
         )}
 
+        {/* SEARCH */}
         <input
           style={styles.inputFull}
           placeholder="Search tasks..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-
+        
+        {/* FILTERS */}
         <div style={{ marginTop: "10px" }}>
           <select
             style={styles.input}
@@ -265,32 +423,111 @@ function App() {
             <option value="high">High</option>
           </select>
         </div>
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-around",
+    flexWrap: "wrap",
+    marginTop: "20px",
+    marginBottom: "20px",
+  }}
+>
+  <div style={styles.statCard}>
+    📋 Total Tasks: {totalTasks}
+  </div>
 
+  <div style={styles.statCard}>
+    ✅ Completed: {completedTasks}
+  </div>
+
+  <div style={styles.statCard}>
+    ⏳ In Progress: {inProgressTasks}
+  </div>
+
+  <div style={styles.statCard}>
+    📝 Todo: {todoTasks}
+  </div>
+</div>
+<div
+  style={{
+    background: "rgba(255,255,255,0.15)",
+    padding: "20px",
+    borderRadius: "12px",
+    marginBottom: "20px",
+  }}
+>
+  <h3 style={{ textAlign: "center" }}>
+    📊 Task Progress Overview
+  </h3>
+
+  <ResponsiveContainer width="100%" height={300}>
+    <PieChart>
+      <Pie
+        data={chartData}
+        cx="50%"
+        cy="50%"
+        outerRadius={100}
+        dataKey="value"
+        label
+      >
+        {chartData.map((entry, index) => (
+          <Cell
+            key={index}
+            fill={COLORS[index % COLORS.length]}
+          />
+        ))}
+      </Pie>
+
+      <Tooltip />
+      <Legend />
+    </PieChart>
+  </ResponsiveContainer>
+</div>
+        {/* TASK LIST */}
         {filteredTasks.map((task) => (
           <div key={task.id} style={styles.taskCard}>
             {editingId === task.id ? (
-              <>
-                <input
-                  style={styles.input}
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                />
+  <>
+    <input
+      style={styles.input}
+      value={editText}
+      onChange={(e) => setEditText(e.target.value)}
+    />
 
-                <select
-                  style={styles.input}
-                  value={editPriority}
-                  onChange={(e) => setEditPriority(e.target.value)}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
+    <textarea
+      style={{
+        width: "100%",
+        padding: "10px",
+        marginTop: "10px",
+        borderRadius: "8px",
+        border: "none",
+        resize: "vertical",
+        minHeight: "70px",
+        boxSizing: "border-box",
+      }}
+      value={editDescription}
+      onChange={(e) => setEditDescription(e.target.value)}
+      placeholder="Edit description..."
+    />
 
-                <button style={styles.addBtn} onClick={() => updateTask(task.id)}>
-                  Save
-                </button>
-              </>
-            ) : (
+    <select
+      style={styles.input}
+      value={editPriority}
+      onChange={(e) => setEditPriority(e.target.value)}
+    >
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+    </select>
+
+    <button
+      style={styles.addBtn}
+      onClick={() => updateTask(task.id)}
+    >
+      Save
+    </button>
+  </>
+) : (
               <>
                 <h3
                   style={{
@@ -300,7 +537,17 @@ function App() {
                 >
                   {task.title}
                 </h3>
-
+              {task.description && (
+  <p
+    style={{
+      marginTop: "5px",
+      opacity: 0.85,
+      fontSize: "14px",
+    }}
+  >
+    {task.description}
+  </p>
+)}
                 <div style={styles.badges}>
                   <span
                     style={{
@@ -347,7 +594,7 @@ function App() {
   );
 }
 
-// styles unchanged
+// ===================== STYLES =====================
 const styles = {
   page: {
     minHeight: "100vh",
@@ -363,6 +610,7 @@ const styles = {
     borderRadius: "15px",
     padding: "20px",
     color: "white",
+    transition: "all 0.4s ease",
   },
   heading: {
     textAlign: "center",
@@ -391,11 +639,22 @@ const styles = {
     cursor: "pointer",
   },
   taskCard: {
-    background: "rgba(255,255,255,0.2)",
-    padding: "15px",
-    marginTop: "15px",
-    borderRadius: "10px",
-  },
+  background: "rgba(255,255,255,0.2)",
+  padding: "15px",
+  marginTop: "15px",
+  borderRadius: "10px",
+},
+
+  statCard: {
+  background: "rgba(255,255,255,0.2)",
+  padding: "12px 18px",
+  borderRadius: "10px",
+  margin: "5px",
+  fontWeight: "bold",
+  minWidth: "150px",
+  textAlign: "center",
+},
+
   badges: {
     display: "flex",
     gap: "8px",
