@@ -32,6 +32,7 @@ function App() {
   const [newDescription, setNewDescription] = useState("");
   const [newPriority, setNewPriority] = useState("low");
   const [dueDate, setDueDate] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
 
   const getDaysLeft = () => {
   if (!dueDate) return "";
@@ -48,6 +49,32 @@ function App() {
 
   return `Overdue by ${Math.abs(diffDays)} day(s)`;
 };
+
+const getDaysLeftForTask = (dueDate) => {
+  if (!dueDate) return "";
+
+  const today = new Date();
+  const due = new Date(dueDate);
+
+  const diffTime = due - today;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays > 1) return `⏳ ${diffDays} days left`;
+  if (diffDays === 1) return `⏳ 1 day left`;
+  if (diffDays === 0) return `📅 Due today`;
+
+  return `🔴 Overdue by ${Math.abs(diffDays)} day(s)`;
+};
+
+const isOverdue = (task) => {
+  if (!task.due_date) return false;
+
+  return (
+    new Date(task.due_date) < new Date() &&
+    task.status !== "completed"
+  );
+};
+
   const [showDueInfo, setShowDueInfo] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -210,11 +237,13 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
       status: "todo",
       priority: newPriority,
       description: newDescription,
+      due_date: dueDate
     });
 
     setNewTask("");
     setNewPriority("low");
     setNewDescription("");
+    setDueDate("");
     loadTasks();
   };
 
@@ -228,6 +257,7 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
   setEditText(task.title);
   setEditDescription(task.description || "");
   setEditPriority(task.priority);
+  setEditDueDate(task.due_date || "");  
 };
 
   const updateTask = async (id) => {
@@ -238,12 +268,14 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
     status: task.status,
     priority: editPriority,
     description: editDescription,
+    due_date: editDueDate
   });
 
   setEditingId(null);
   setEditText("");
   setEditDescription("");
   setEditPriority("low");
+  setEditDueDate(""); 
 
   loadTasks();
 };
@@ -485,7 +517,15 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
 </div>
         {/* TASK LIST */}
         {filteredTasks.map((task) => (
-          <div key={task.id} style={styles.taskCard}>
+          <div
+  key={task.id}
+  style={{
+    ...styles.taskCard,
+    border: isOverdue(task)
+      ? "2px solid red"
+      : "none",
+  }}
+>
             {editingId === task.id ? (
   <>
     <input
@@ -519,7 +559,12 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
       <option value="medium">Medium</option>
       <option value="high">High</option>
     </select>
-
+    <input
+  type="date"
+  style={styles.input}
+  value={editDueDate}
+  onChange={(e) => setEditDueDate(e.target.value)}
+/>
     <button
       style={styles.addBtn}
       onClick={() => updateTask(task.id)}
@@ -530,14 +575,37 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
 ) : (
               <>
                 <h3
-                  style={{
-                    textDecoration:
-                      task.status === "completed" ? "line-through" : "none",
-                  }}
-                >
-                  {task.title}
-                </h3>
-              {task.description && (
+  style={{
+    textDecoration:
+      task.status === "completed" ? "line-through" : "none",
+  }}
+>
+  {task.title}
+</h3>
+
+{task.due_date && (
+  <>
+    <p
+      style={{
+        marginTop: "5px",
+        fontSize: "13px",
+      }}
+    >
+      📅 Due: {task.due_date}
+    </p>
+
+    <p
+      style={{
+        fontSize: "12px",
+        fontWeight: "bold",
+      }}
+    >
+      {getDaysLeftForTask(task.due_date)}
+    </p>
+  </>
+)}
+
+{task.description && (
   <p
     style={{
       marginTop: "5px",
@@ -548,6 +616,8 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
     {task.description}
   </p>
 )}
+
+
                 <div style={styles.badges}>
                   <span
                     style={{
@@ -588,7 +658,21 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
               </>
             )}
           </div>
-        ))}
+                ))}
+
+        {/* Footer */}
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: "30px",
+            padding: "15px",
+            opacity: "0.8",
+            fontSize: "14px",
+          }}
+        >
+          🚀 Task Tracker | Built with React + FastAPI + SQLite + OpenAI
+        </div>
+
       </div>
     </div>
   );
