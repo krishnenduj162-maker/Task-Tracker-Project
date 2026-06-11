@@ -1,7 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = "http://127.0.0.1:8000";
-
+const BASE_URL = "https://your-backend.up.railway.app";
 // GET all tasks
 export const getTasks = () => {
   return axios.get(`${BASE_URL}/tasks`);
