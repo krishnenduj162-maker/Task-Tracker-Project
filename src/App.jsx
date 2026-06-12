@@ -87,15 +87,17 @@ const isOverdue = (task) => {
 
   const totalTasks = tasks.length;
 
-const completedTasks = tasks.filter(
+const safeTasks = Array.isArray(tasks) ? tasks : [];
+
+const completedTasks = safeTasks.filter(
   (task) => task.status === "completed"
 ).length;
 
-const inProgressTasks = tasks.filter(
+const inProgressTasks = safeTasks.filter(
   (task) => task.status === "inprogress"
 ).length;
 
-const todoTasks = tasks.filter(
+const todoTasks = safeTasks.filter(
   (task) => task.status === "todo"
 ).length;
 
@@ -104,7 +106,6 @@ const chartData = [
   { name: "In Progress", value: inProgressTasks },
   { name: "Todo", value: todoTasks },
 ];
-
 const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
 
   const [aiMessage, setAiMessage] = useState("");
@@ -131,13 +132,18 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
 }, []);
 
   const loadTasks = async () => {
-    try {
-      const response = await getTasks();
-      setTasks(response.data);
-    } catch (error) {
-      console.log("Error fetching tasks:", error);
-    }
-  };
+  try {
+    const response = await getTasks();
+
+    console.log("TYPE:", typeof response.data);
+    console.log("IS ARRAY:", Array.isArray(response.data));
+    console.log("API DATA:", response.data);
+
+    setTasks(response.data);
+  } catch (error) {
+    console.log("Error fetching tasks:", error);
+  }
+};
 
   useEffect(() => {
     console.log("TASKS STATE:", tasks);
@@ -237,7 +243,7 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
       status: "todo",
       priority: newPriority,
       description: newDescription,
-      due_date: dueDate
+      due_date: dueDate  || null,
     });
 
     setNewTask("");
@@ -291,17 +297,16 @@ const COLORS = ["#2ecc71", "#f39c12", "#3498db"];
   };
 
   // ===================== FILTERING =====================
-  const filteredTasks = tasks
-    .filter((t) =>
-      t.title?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .filter((t) =>
-      statusFilter === "all" ? true : t.status === statusFilter
-    )
-    .filter((t) =>
-      priorityFilter === "all" ? true : t.priority === priorityFilter
-    );
-
+  const filteredTasks = (Array.isArray(tasks) ? tasks : [])
+  .filter((t) =>
+    t.title?.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+  .filter((t) =>
+    statusFilter === "all" ? true : t.status === statusFilter
+  )
+  .filter((t) =>
+    priorityFilter === "all" ? true : t.priority === priorityFilter
+  );
   return (
     <div style={pageStyle}>
       <div
